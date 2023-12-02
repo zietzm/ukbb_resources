@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 # This script builds the data_resources/ukbiobank/hapmap3_genotypes/ directory
 # for imputed SNP data from the UK Biobank. It downloads the HapMap3 variant list
 # from LDAK, and then uses plink to extract the SNPs from the imputed data.
@@ -55,49 +57,63 @@ process_chromosome() {
   # using only the variants available in the imputed data, on the current
   # chromosome. These files have two columns: CHR:BP and rsID.
   bgenix \
-    -g $BGEN_DIR/ukb22828_imp_chr${chr}_v3.bgen \
-    -i $BGENIX_DIR/ukb100319_imp_chr${chr}_v3.bgen.bgi \
+    -g $BGEN_DIR/ukb22828_imp_chr"${chr}"_v3.bgen \
+    -i $BGENIX_DIR/ukb100319_imp_chr"${chr}"_v3.bgen.bgi \
     -list \
-    > $OUT_DIR/chr${chr}_variants_bgenix.txt
+    > $OUT_DIR/chr"${chr}"_variants_bgenix.txt
 
   # Since the bgen files are on huggin, and since we have to transfer data
   # between eir and huggin, we'll do all this processing locally instead of
   # in the pipe.
-  cat $OUT_DIR/chr${chr}_variants_bgenix.txt \
+  cat $OUT_DIR/chr"${chr}"_variants_bgenix.txt \
     | tail -n +3 \
     | awk '{print $3":"$4"\t"$2}' - \
     | sed 's/^0//g' \
     | sort -k1,1 \
     | join -1 1 -2 1 $OUT_DIR/hapmap3_variants.txt - \
-    > $OUT_DIR/chr${chr}_variants_map.txt
+    > $OUT_DIR/chr"${chr}"_variants_map.txt
 
   # Extract the rsIDs from the map file (to query the bgen files).
-  cut -d' ' -f2 $OUT_DIR/chr${chr}_variants_map.txt \
-    > $OUT_DIR/chr${chr}_rsids.txt
+  cut -d' ' -f2 $OUT_DIR/chr"${chr}"_variants_map.txt \
+    > $OUT_DIR/chr"${chr}"_rsids.txt
 
   # Extract the variants from the bgen files.
   bgenix \
-    -g $BGEN_DIR/ukb22828_imp_chr${chr}_v3.bgen \
-    -i $BGENIX_DIR/ukb100319_imp_chr${chr}_v3.bgen.bgi \
-    -incl-rsids $OUT_DIR/chr${chr}_rsids.txt \
-    > $OUT_DIR/chr${chr}_hapmap3_variants.bgen
+    -g $BGEN_DIR/ukb22828_imp_chr"${chr}"_v3.bgen \
+    -i $BGENIX_DIR/ukb100319_imp_chr"${chr}"_v3.bgen.bgi \
+    -incl-rsids $OUT_DIR/chr"${chr}"_rsids.txt \
+    > $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen
 
   # Convert the bgen files to plink2 format.
   plink2 \
-    --bgen $OUT_DIR/chr${chr}_hapmap3_variants.bgen \
-    --sample $BGEN_DIR/ukb22828_c${chr}_b0_v3_s487280.sample \
+    --bgen $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen \
+    --sample $BGEN_DIR/ukb22828_c"${chr}"_b0_v3_s487280.sample \
     --rm-dup exclude-mismatch \
     --make-pgen \
-    --out $OUT_DIR/chr${chr}_hapmap3_variants
+    --out $OUT_DIR/chr"${chr}"_hapmap3_variants
+
+  rm $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen
 
   # Map the rsIDs back to CHR:BP format.
   plink2 \
-    --pfile $OUT_DIR/chr${chr}_hapmap3_variants \
-    --update-name $OUT_DIR/chr${chr}_variants_map.txt 1 2 \
+    --pfile $OUT_DIR/chr"${chr}"_hapmap3_variants \
+    --update-name $OUT_DIR/chr"${chr}"_variants_map.txt 1 2 \
     --make-pgen \
-    --out $OUT_DIR/chr${chr}_hapmap3_variants_mapped
+    --out $OUT_DIR/chr"${chr}"_hapmap3_variants_mapped
 
-  echo "$OUT_DIR/chr${chr}_hapmap3_variants_mapped" >> $OUT_DIR/chr_merge_list.txt
+  rm $OUT_DIR/chr"${chr}"_hapmap3_variants.*
+
+  # Remove duplicate variants (we do this last since we want to remove variants
+  # whose CHR:BP ids are duplicated, not rsIDs).
+  plink2 \
+    --pfile $OUT_DIR/chr"${chr}"_hapmap3_variants_mapped \
+    --rm-dup exclude-mismatch \
+    --make-pgen \
+    --out $OUT_DIR/chr"${chr}"_hapmap3_variants_mapped_unique
+
+  rm $OUT_DIR/chr"${chr}"_hapmap3_variants_mapped.*
+
+  echo "$OUT_DIR/chr${chr}_hapmap3_variants_mapped_unique" >> $OUT_DIR/chr_merge_list.txt
 }
 
 export -f process_chromosome
@@ -106,10 +122,13 @@ export -f process_chromosome
 parallel --jobs 22 process_chromosome ::: {1..22}
 
 # Merge the plink files.
+sort chr_merge_list.txt | uniq > chr_merge_list_sorted.txt
+
 plink2 \
-  --pmerge-list chr_merge_list.txt pfile \
+  --pmerge-list chr_merge_list_sorted.txt pfile \
   --make-pgen \
   --out hapmap3_variants
+
 
 # Create a file with eids for White British individuals.
 # Note field 21000 (ethnic background) https://biobank.ndph.ox.ac.uk/ukb/field.cgi?id=21000

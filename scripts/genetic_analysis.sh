@@ -43,7 +43,7 @@ regenie \
   --pgen $GENOTYPES \
   --ref-first \
   --covarFile $COVARIATES \
-  --covarColList age,sex,PC{1:10} \
+  --covarColList "age,sex,PC{1:10}" \
   --phenoFile $PHENOTYPES \
   --bsize 10000 \
   --out $GWAS_PATH/regenie_white_british
@@ -54,7 +54,7 @@ regenie \
   --pgen $GENOTYPES \
   --ref-first \
   --covarFile $COVARIATES \
-  --covarColList age,sex,PC{1:10} \
+  --covarColList "age,sex,PC{1:10}" \
   --phenoFile $PHENOTYPES \
   --bsize 1000 \
   --pred $GWAS_PATH/regenie_white_british_pred.list \
