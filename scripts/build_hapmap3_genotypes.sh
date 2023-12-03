@@ -6,10 +6,31 @@ set -e
 # for imputed SNP data from the UK Biobank. It downloads the HapMap3 variant list
 # from LDAK, and then uses plink to extract the SNPs from the imputed data.
 # In addition to GNU coreutils, this assumes that Plink, Bgenix, and XSV are
-# installed in the PATH. This is supposed to be run on eir, a Tatonetti Lab server.
+# installed in the PATH.
 
-mkdir -p /data2/michael/data_resources/ukbiobank/hapmap3_genotypes/
-cd /data2/michael/data_resources/ukbiobank/hapmap3_genotypes/
+SERVER=eir
+
+if [ "$SERVER" = "eir" ]; then
+    DATA_DIR=/data2/michael/data_resources
+    UKB_DIR=/huggin/data2/ukb_data
+    BGEN_DIR=$UKB_DIR/22828_imputed_genotype_bgen
+    BGENIX_DIR=$UKB_DIR/100319_imputed_genotype_bgi
+    ETHNICITY_FILE=$UKB_DIR/ukb23674_data_pull/100065_ethnicity.csv
+elif [ "$SERVER" = "huggin" ]; then
+    DATA_DIR=/data1/home/mnz2108/data_resources
+    UKB_DIR=/data1/deep_storage/ukbiobank
+    BGEN_DIR=$UKB_DIR/imp_bgen_files
+    BGENIX_DIR=$UKB_DIR/imp_bgi_files
+    ETHNICITY_FILE=$UKB_DIR/ukb_datapulls/ukb23674_ethnicity.csv
+else
+  echo "Unknown server $SERVER"
+  exit 1
+fi
+
+OUT_DIR=$DATA_DIR/ukbiobank/hapmap3_genotypes/
+
+mkdir -p $DATA_DIR/ukbiobank/hapmap3_genotypes/
+cd $DATA_DIR/ukbiobank/hapmap3_genotypes/
 
 # The HapMap3 tagging files for LDAK is available from the LDAK website
 wget https://genetics.ghpc.au.dk/doug/bld.ldak.hapmap.gbr.tagging.gz
@@ -41,26 +62,29 @@ cut -d' ' -f1 ldak.thin.hapmap.gbr.tagging \
 # bgen files using rsIDs, then convert the bgen files to plink format, then
 # map the rsIDs back to CHR:BP format for easy use with LDAK.
 
-BGEN_DIR=/huggin/data2/ukb_data/22828_imputed_genotype_bgen
-BGENIX_DIR=/huggin/data2/ukb_data/100319_imputed_genotype_bgi
-
 process_chromosome() {
   chr=$1
-
-  BGEN_DIR=/huggin/data2/ukb_data/22828_imputed_genotype_bgen
-  BGENIX_DIR=/huggin/data2/ukb_data/100319_imputed_genotype_bgi
-  OUT_DIR=/data2/michael/data_resources/ukbiobank/hapmap3_genotypes/
-
   echo "Processing chromosome $chr"
 
   # Create a map between rsid and CHR:BP for the HapMap3 variants,
   # using only the variants available in the imputed data, on the current
   # chromosome. These files have two columns: CHR:BP and rsID.
-  bgenix \
-    -g $BGEN_DIR/ukb22828_imp_chr"${chr}"_v3.bgen \
-    -i $BGENIX_DIR/ukb100319_imp_chr"${chr}"_v3.bgen.bgi \
-    -list \
-    > $OUT_DIR/chr"${chr}"_variants_bgenix.txt
+  if [ "$SERVER" = "eir" ]; then
+      bgenix \
+        -g $BGEN_DIR/ukb22828_imp_chr"${chr}"_v3.bgen \
+        -i $BGENIX_DIR/ukb100319_imp_chr"${chr}"_v3.bgen.bgi \
+        -list \
+        > $OUT_DIR/chr"${chr}"_variants_bgenix.txt
+  elif [ "$SERVER" = "mimir" ]; then
+      bgenix \
+        -g $BGEN_DIR/ukb_imp_chr"${chr}"_v3.bgen \
+        -i $BGENIX_DIR/004_ukb_imp_chr"${chr}"_v3.bgen.bgi \
+        -list \
+        > $OUT_DIR/chr"${chr}"_variants_bgenix.txt
+  else
+      echo "Unknown server $SERVER"
+      exit 1
+  fi
 
   # Since the bgen files are on huggin, and since we have to transfer data
   # between eir and huggin, we'll do all this processing locally instead of
@@ -78,19 +102,42 @@ process_chromosome() {
     > $OUT_DIR/chr"${chr}"_rsids.txt
 
   # Extract the variants from the bgen files.
-  bgenix \
-    -g $BGEN_DIR/ukb22828_imp_chr"${chr}"_v3.bgen \
-    -i $BGENIX_DIR/ukb100319_imp_chr"${chr}"_v3.bgen.bgi \
-    -incl-rsids $OUT_DIR/chr"${chr}"_rsids.txt \
-    > $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen
+  if [ "$SERVER" = "eir" ]; then
+      bgenix \
+        -g $BGEN_DIR/ukb22828_imp_chr"${chr}"_v3.bgen \
+        -i $BGENIX_DIR/ukb100319_imp_chr"${chr}"_v3.bgen.bgi \
+        -incl-rsids $OUT_DIR/chr"${chr}"_rsids.txt \
+        > $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen
+  elif [ "$SERVER" = "mimir" ]; then
+      bgenix \
+        -g $BGEN_DIR/ukb_imp_chr"${chr}"_v3.bgen \
+        -i $BGENIX_DIR/004_ukb_imp_chr"${chr}"_v3.bgen.bgi \
+        -incl-rsids $OUT_DIR/chr"${chr}"_rsids.txt \
+        > $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen
+  else
+      echo "Unknown server $SERVER"
+      exit 1
+  fi
 
   # Convert the bgen files to plink2 format.
-  plink2 \
-    --bgen $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen \
-    --sample $BGEN_DIR/ukb22828_c"${chr}"_b0_v3_s487280.sample \
-    --rm-dup exclude-mismatch \
-    --make-pgen \
-    --out $OUT_DIR/chr"${chr}"_hapmap3_variants
+  if [ "$SERVER" = "eir" ]; then
+      plink2 \
+        --bgen $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen ref-first \
+        --sample $BGEN_DIR/ukb22828_c"${chr}"_b0_v3_s487280.sample \
+        --rm-dup exclude-mismatch \
+        --make-pgen \
+        --out $OUT_DIR/chr"${chr}"_hapmap3_variants
+  elif [ "$SERVER" = "mimir" ]; then
+      plink2 \
+        --bgen $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen ref-first \
+        --sample $UKB_DIR/genotypes/ukb41019_imp_chr"${chr}"_v3_s487282.sample \
+        --rm-dup exclude-mismatch \
+        --make-pgen \
+        --out $OUT_DIR/chr"${chr}"_hapmap3_variants
+  else
+      echo "Unknown server $SERVER"
+      exit 1
+  fi
 
   rm $OUT_DIR/chr"${chr}"_hapmap3_variants.bgen
 
@@ -112,14 +159,20 @@ process_chromosome() {
     --out $OUT_DIR/chr"${chr}"_hapmap3_variants_mapped_unique
 
   rm $OUT_DIR/chr"${chr}"_hapmap3_variants_mapped.*
+  rm $OUT_DIR/chr"${chr}"_variants_bgenix.txt
+  rm $OUT_DIR/chr"${chr}"_rsids.txt
 
   echo "$OUT_DIR/chr${chr}_hapmap3_variants_mapped_unique" >> $OUT_DIR/chr_merge_list.txt
 }
 
-export -f process_chromosome
+# Process each chromosome in parallel (do not attempt)
+# export -f process_chromosome
+# parallel --jobs 22 process_chromosome ::: {1..22}
 
-# Process each chromosome in parallel.
-parallel --jobs 22 process_chromosome ::: {1..22}
+# Process each chromosome in series.
+for chr in {2..22}; do
+  process_chromosome "$chr"
+done
 
 # Merge the plink files.
 sort chr_merge_list.txt | uniq > chr_merge_list_sorted.txt
@@ -129,12 +182,11 @@ plink2 \
   --make-pgen \
   --out hapmap3_variants
 
-
 # Create a file with eids for White British individuals.
 # Note field 21000 (ethnic background) https://biobank.ndph.ox.ac.uk/ukb/field.cgi?id=21000
 # Note coding https://biobank.ndph.ox.ac.uk/ukb/coding.cgi?id=1001
 # Note value 1001 = White British
-xsv search -s '"21000-0.0"' "1001" /huggin/data2/ukb_data/ukb23674_data_pull/100065_ethnicity.csv \
+xsv search -s '"21000-0.0"' "1001" $ETHNICITY_FILE  \
   | xsv search -s '"21000-1.0"' "(^1001$|^$)" \
   | xsv search -s '"21000-2.0"' "(^1001$|^$)" \
   | xsv select eid,eid \
@@ -142,11 +194,17 @@ xsv search -s '"21000-0.0"' "1001" /huggin/data2/ukb_data/ukb23674_data_pull/100
   | tail -n +2 \
   | cat <(echo "#FID,IID") - \
   | xsv fmt -t '\t' \
-  > /data2/michael/data_resources/ukbiobank/ukb_white_british_ids.tsv
+  > $DATA_DIR/ukbiobank/ukb_white_british_ids.tsv
 
 # Filter genotypes for White British individuals.
 plink2 \
   --pfile hapmap3_variants \
-  --keep /data2/michael/data_resources/ukbiobank/ukb_white_british_ids.txt \
+  --keep $DATA_DIR/ukbiobank/ukb_white_british_ids.tsv \
   --make-pgen \
   --out hapmap3_variants_white_british
+
+cat chr*variants_map.txt > hapmap3_variants_map.txt
+rm chr*variants_map.txt
+
+# Remove the intermediate files.
+rm chr*.p* chr*.log hapmap3_variants*-merge.p* chr_merge_list*.txt hapmap3_variants-merge.*
