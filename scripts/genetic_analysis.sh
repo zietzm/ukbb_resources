@@ -70,6 +70,16 @@ fi
 #   | xsv fmt -t $'\t' \
 #   > $PHENOTYPES
 
+# xsv select 'FID,IID,q_30700_0,q_30710_0,q_30720_0,q_30730_0,q_30740_0,q_30750_0,q_30760_0,q_30770_0,q_30780_0,q_30790_0' \
+# 	$PHENOTYPE_ROOT/pheno_regenie.tsv |
+# 	xsv fmt -t $'\t' \
+# 		>$PHENOTYPE_ROOT/timing_pheno.tsv
+
+plink2 \
+	--pfile $GENOTYPES \
+	--make-bed \
+	--out $GENOTYPES
+
 # plink2 \
 # 	--pfile $GENOTYPES \
 # 	--pheno $PHENOTYPES \
