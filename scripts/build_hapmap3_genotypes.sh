@@ -8,7 +8,7 @@ set -e
 # In addition to GNU coreutils, this assumes that Plink, Bgenix, and XSV are
 # installed in the PATH.
 
-SERVER=eir
+SERVER=mimir
 
 if [ "$SERVER" = "eir" ]; then
     DATA_DIR=/data2/michael/data_resources
@@ -16,7 +16,7 @@ if [ "$SERVER" = "eir" ]; then
     BGEN_DIR=$UKB_DIR/22828_imputed_genotype_bgen
     BGENIX_DIR=$UKB_DIR/100319_imputed_genotype_bgi
     ETHNICITY_FILE=$UKB_DIR/ukb23674_data_pull/100065_ethnicity.csv
-elif [ "$SERVER" = "huggin" ]; then
+elif [ "$SERVER" = "mimir" ]; then
     DATA_DIR=/data1/home/mnz2108/data_resources
     UKB_DIR=/data1/deep_storage/ukbiobank
     BGEN_DIR=$UKB_DIR/imp_bgen_files
